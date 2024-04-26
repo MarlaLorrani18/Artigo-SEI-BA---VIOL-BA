@@ -1,0 +1,92 @@
+rm(list=ls(all=TRUE))
+
+# Pacotes
+library(dplyr)
+library(geobr)
+library(sf)
+library(gridExtra)
+library(stringr)
+library(readxl)
+
+# Lendo a base de dados total de violências do DATA SUS
+VIOLBR <- read.csv("C:/Users/marla/Desktop/TCC I/Bases/VIOLBR.csv", sep=";")
+View(VIOLBR)
+
+glimpse(VIOLBR)
+
+# Filtrando pelo estado da Bahia
+VIOLBA <- VIOLBR %>% 
+  filter(SG_UF_NOT == 29)
+View(VIOLBA)
+
+# Filtros do estudo: sexo, como "feminino", lesão auto-provocada, como 
+#"não", e relação com o provável autor sendo a própria pessoa, como "não"
+
+VIOLBAFEM <- VIOLBA %>% 
+  filter(CS_SEXO == "F" & LES_AUTOP == 2 & REL_PROPRI == 2)
+
+## Quantidade de notificações por município
+
+not_mun <- VIOLBAFEM %>% group_by(ID_MUNICIP) %>% tally()
+names(not_mun) <- c("code_muni", "n")
+
+## Quantidade de notificações por município por ano estudado
+
+not_mun_ano <- VIOLBAFEM %>% group_by(ID_MUNICIP, ANO) %>% tally()
+
+## geobr -> codigos dos municipíos do brasil
+
+municipios <- read_municipality(code_muni = "all", year = 2010)
+municipios <- municipios %>% filter(code_state == 29)
+
+## Colocar o codigo dos municipios com 6 digitos
+
+municipios$code_muni <- as.character(municipios$code_muni)
+str_length(municipios$code_muni)
+municipios$code_muni <- str_sub(municipios$code_muni, end=6)
+str_length(municipios$code_muni)
+municipios$code_muni <- as.numeric(municipios$code_muni)
+
+## merge com os municípios da bahia
+
+mapa_not_mun_ba <- left_join(not_mun, municipios)
+
+## Mapa de calor geral das quantidades de notificações de violências em cada 
+## municipio da BA
+
+
+## População estimada dos municípios da bahia
+## https://www.ibge.gov.br/estatisticas/sociais/populacao/9103-estimativas-de-populacao.html
+
+populacao_mun_ba <- read_excel("C:/Users/marla/Desktop/POP2021_20230710 (1).xls", 
+                                  sheet = "Municípios")
+
+names(populacao_mun_ba) <- c("UF", "cod_uf", "code_muni", "nome", "pop_estimada")
+populacao_mun_ba <- populacao_mun_ba[-1,]
+populacao_mun_ba <- populacao_mun_ba %>% filter(`cod_uf` == 29)
+
+## concatenar os codigos do estado com os codigos dos municipíos
+## precisa transformar em string ?? tem uma forma mais rápida ??
+
+populacao_mun_ba$cod_uf <- as.character(populacao_mun_ba$cod_uf)
+populacao_mun_ba$code_muni <- as.character(populacao_mun_ba$code_muni)
+
+populacao_mun_ba$code_muni <- str_c(populacao_mun_ba$cod_uf, populacao_mun_ba$code_muni)
+populacao_mun_ba$code_muni <- str_sub(populacao_mun_ba$code_muni, end=6)
+
+populacao_mun_ba$code_muni <- as.numeric(populacao_mun_ba$code_muni)
+
+## base de dados com as notificações das ocorrências, população estimada e 
+## informações geográficas de cada município da bahia
+
+base_mapa_geral_not_ba <- merge(mapa_not_mun_ba, populacao_mun_ba) 
+
+glimpse(base_mapa_geral_not_ba)
+
+base_mapa_geral_not_ba$pop_estimada <- as.numeric(base_mapa_geral_not_ba$pop_estimada)
+
+## CONSERTAR OS DOIS MUNICIPIOS COM POPULAÇÕES RUINS NA BASE DO IBGE !!!!!!
+
+## Taxa de notificações: n / pop estimada * 10.000
+
+base_mapa_geral_not_ba$taxa <- round(((base_mapa_geral_not_ba$n / base_mapa_geral_not_ba$pop_estimada) * 10000), 2)
